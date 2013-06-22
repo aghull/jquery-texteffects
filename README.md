@@ -1,0 +1,1 @@
+See http://aghull.github.com/coding/2013/06/22/jQuery-odometer
