@@ -1,7 +1,6 @@
 (function ($, _, window, document) {
   var defaults = {
-    inc: 1,
-    speed: 0
+    chars: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXTZ'
   };
 
   function TextEffects(el, options) {
@@ -12,14 +11,17 @@
 
   TextEffects.prototype = {
     init: function() {
-      var number = parseInt(this.$el.text(), 10);
-      var target = number+this.options.inc;
-      this.adjustNumber(target, String(Math.abs(this.options.inc)).length-2);
+      if (this.options.inc) {
+        this.odometer(parseInt(this.$el.text(), 10) + this.options.inc, Math.max(0,String(Math.abs(this.options.inc)).length-2));
+      } else if (this.options.text) {
+        this.text(this.options.text);
+      }
     },
 
     // speed: how many numbers to blur
-    adjustNumber: function(target, speed) {
+    odometer: function(target, speed) {
       var that = this;
+      this.flipping = 0;
       // clone out el, split into spans and wrap in overflow
       this.clone = this.detach(this.$el, true);
       this.wrap(this.clone.html(this.spans = _.map(this.$el.text(), function(char) { return $('<span>').text(char); })));
@@ -36,7 +38,35 @@
       }
     },
 
-    // speed: how many numbers to blur
+    text: function(target) {
+      var that = this;
+      this.flipping = 0;
+      // clone out el, split into spans and wrap in overflow
+      this.clone = this.detach(this.$el, true);
+      this.wrap(this.clone.html(this.spans = _.map(this.$el.text(), function(char) { return $('<span>').text(char); })));
+
+      if (target.length>this.$el.text().length) {
+        target = target.substring(0,this.$el.text().length);
+      }
+      while (target.length<this.$el.text().length) {
+        target = target + ' ';
+      }
+      _.each(this.spans, function(span, i) {
+        var s=[];
+        _.times(_.random(3,20), function() { s.push(that.options.chars[_.random(that.options.chars.length-1)]); });
+        s.push(target[i]);
+        that.flipping++;
+        that.flipTimes(span, s, function() {
+          that.flipping--;
+          if (that.flipping==0) {
+            that.reattach(that.$el.text(target)); 
+            that.complete();
+          }
+        });
+      });
+    },
+
+    // flip number from (string) to (string), speed: how many numbers to blur
     numberFlip: function(from, to, speed) {
       var that = this, i;
       if (parseInt(from,10)!=parseInt(to,10)) {
@@ -51,17 +81,41 @@
         var calledback = false;
         for (i=next.length-1-speed; i>=0; i--) { // ...3,2,1,0
           if (next[i]!=from[i]) {
-            this.rotate(this.spans[i], next[i], 100+500*(next.length-1-speed-i), parseInt(from,10) < parseInt(to,10) ? 1 : -1, calledback ? null : (calledback=true) && function() {
-              that.numberFlip(next, to, speed);
-            });
+            this.flipping++;
+            this.flip(this.spans[i], next[i], 100+500*(next.length-1-speed-i), parseInt(from,10) < parseInt(to,10) ? 1 : -1, (function(first) {
+              calledback = true;
+              return function() {
+                that.flipping--;
+                if (parseInt(next,10)==parseInt(to,10)) {
+                  for (i=0; i!=speed; i++) {
+                    that.stopBlur(that.spans[that.spans.length-speed+i]);
+                  }
+                  if (that.flipping==0) {
+                    that.reattach(that.$el.text(to)); 
+                    that.complete();
+                  }
+                }
+                if (first) {
+                  that.numberFlip(next, to, speed);
+                }
+              };
+            }(!calledback)));
           }
         }
+      }
+    },
+
+    flipTimes: function($el, queue, callback) {
+      var that = this
+      , next = queue.shift();
+      if (next) {
+        this.flip($el, next, 100, 1, function() {
+          that.flipTimes($el, queue, callback);
+        });
       } else {
-        that.reattach(that.$el.text(to));
-        for (i=0; i!=speed; i++) {
-          that.stopBlur(this.spans[this.spans.length-speed+i]);
+        if (typeof callback=='function') {
+          callback.call();
         }
-        that.complete();
       }
     },
 
@@ -88,6 +142,9 @@
 
     complete: function() {
       this.$el.data("text-effects", null);
+      if (typeof this.options.complete=='function') {
+        this.options.complete.call();
+      }
     },
 
     wrap: function($el) {
@@ -98,12 +155,12 @@
       })).children().first();
     },
 
-    // speed: ms
-    rotate: function($el, text, speed, direction, callback) {
+    // flip $el to text, speed is in ms, direction is 1 or -1
+    flip: function($el, text, speed, direction, callback) {
       var that = this;
       var letters = [ this.detach($el).text(text), this.detach($el, true) ]
       , center = $el.position().top
-      , offset = $el.height() * direction;
+      , offset = $el.height() * (direction > 0 ? 1 : -1);
       letters[1].css({top: center}).animate({top: center - offset}, speed);
       letters[0].css({top: center + offset}).animate({top: center}, speed, function() {
         that.reattach($el.text(text));
@@ -135,7 +192,7 @@
       var that = this;
       if ($el.parent().length) {
         setTimeout(function() {
-          $el.text(Math.floor(Math.random()*10));
+          $el.text(_.random(0,9));
           that.flipRandomly($el);
         }, 10);
       }
