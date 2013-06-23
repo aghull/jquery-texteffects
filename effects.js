@@ -1,6 +1,7 @@
 (function ($, _, window, document) {
   var defaults = {
-    chars: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXTZ'
+    chars: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXTZ',
+    inc: 1
   };
 
   function TextEffects(el, options) {
@@ -11,10 +12,12 @@
 
   TextEffects.prototype = {
     init: function() {
-      if (this.options.inc) {
+      if (this.options.effect=='odometer') {
         this.odometer(parseInt(this.$el.text(), 10) + this.options.inc, Math.max(0,String(Math.abs(this.options.inc)).length-2));
-      } else if (this.options.text) {
-        this.text(this.options.text);
+      } else if (this.options.effect=='decrypt') {
+        this.decrypt(this.options.text);
+      } else if (this.options.effect=='bounce') {
+        this.bounce(this.options.text);
       }
     },
 
@@ -23,8 +26,7 @@
       var that = this;
       this.flipping = 0;
       // clone out el, split into spans and wrap in overflow
-      this.clone = this.detach(this.$el, true);
-      this.wrap(this.clone.html(this.spans = _.map(this.$el.text(), function(char) { return $('<span>').text(char); })));
+      this.spans = this.split(this.clone = this.detach(this.$el, true));
       _.each(this.spans, function(span) {
         span.wrap($('<span>').css({
           display: 'inline-block',
@@ -34,35 +36,69 @@
       this.numberFlip(this.$el.text(), String(target), speed);
       var i;
       for (i=0; i!=speed; i++) {
-        this.blur(this.spans[this.spans.length-speed+i], i+1);
+        this.blur(this.spans[this.spans.length-speed+i], i+1, '0123456789');
       }
     },
 
-    text: function(target) {
+    bounce: function(target) {
       var that = this;
       this.flipping = 0;
       // clone out el, split into spans and wrap in overflow
-      this.clone = this.detach(this.$el, true);
-      this.wrap(this.clone.html(this.spans = _.map(this.$el.text(), function(char) { return $('<span>').text(char); })));
-
-      if (target.length>this.$el.text().length) {
+      this.spans = this.split(this.clone = this.detach(this.$el, true));
+      if (target.length > this.$el.text().length) {
         target = target.substring(0,this.$el.text().length);
       }
-      while (target.length<this.$el.text().length) {
+      while (target.length < this.$el.text().length) {
         target = target + ' ';
       }
       _.each(this.spans, function(span, i) {
-        var s=[];
-        _.times(_.random(3,20), function() { s.push(that.options.chars[_.random(that.options.chars.length-1)]); });
-        s.push(target[i]);
-        that.flipping++;
-        that.flipTimes(span, s, function() {
-          that.flipping--;
-          if (that.flipping==0) {
-            that.reattach(that.$el.text(target)); 
-            that.complete();
-          }
+        setTimeout(function() {
+          that.flipping++;
+          that.flip(span, target[i], { speed: 300, bounce: 0.2 }, function() {
+            that.flipping--;
+            if (that.flipping==0) {
+              that.reattach(that.$el.text(target)); 
+              that.complete();
+            }
+          });
+        }, i*50);
+      });
+    },
+
+    decrypt: function(target) {
+      var that = this;
+      this.flipping = 0;
+      // clone out el, split into spans and wrap in overflow
+      this.spans = this.split(this.clone = this.detach(this.$el, true));
+      if (target.length > this.$el.text().length) {
+        target = target.substring(0,this.$el.text().length);
+      }
+      while (target.length < this.$el.text().length) {
+        target = target + ' ';
+      }
+      _.each(this.spans, function(span, i) {
+        var s1=[], s2=[];
+        _.times(_.random(10,30), function() {
+          s1.push(that.options.chars[_.random(that.options.chars.length-1)]);
         });
+        _.times(3, function() {
+          s2.push(that.options.chars[_.random(that.options.chars.length-1)]);
+        });
+        s2.push(target[i]);
+        that.flipping++;
+        that.blur(span, 1, that.options.chars);
+        setTimeout(function() {
+          that.stopBlur(span);
+          that.flipTimes(span, s1, 100, function() {
+            that.flipTimes(span, s2, 500, function() {
+              that.flipping--;
+              if (that.flipping==0) {
+                that.reattach(that.$el.text(target)); 
+                that.complete();
+              }
+            });
+          });
+        }, _.random(1000, 4000));
       });
     },
 
@@ -82,7 +118,10 @@
         for (i=next.length-1-speed; i>=0; i--) { // ...3,2,1,0
           if (next[i]!=from[i]) {
             this.flipping++;
-            this.flip(this.spans[i], next[i], 100+500*(next.length-1-speed-i), parseInt(from,10) < parseInt(to,10) ? 1 : -1, (function(first) {
+            this.flip(this.spans[i], next[i], {
+              speed: 100+500*(next.length-1-speed-i),
+              direction: parseInt(from,10) < parseInt(to,10) ? 1 : -1
+            }, (function(first) {
               calledback = true;
               return function() {
                 that.flipping--;
@@ -105,12 +144,12 @@
       }
     },
 
-    flipTimes: function($el, queue, callback) {
+    flipTimes: function($el, queue, speed, callback) {
       var that = this
       , next = queue.shift();
       if (next) {
-        this.flip($el, next, 100, 1, function() {
-          that.flipTimes($el, queue, callback);
+        this.flip($el, next, { speed: speed }, function() {
+          that.flipTimes($el, queue, speed, callback);
         });
       } else {
         if (typeof callback=='function') {
@@ -137,7 +176,7 @@
       if ($el.data('textEffectsClone')) {
         _.invoke($el.data('textEffectsClone'), 'remove');
       }
-      $el.css({opacity:1});
+      $el.css({opacity:'inherit'});
     },
 
     complete: function() {
@@ -155,24 +194,44 @@
       })).children().first();
     },
 
-    // flip $el to text, speed is in ms, direction is 1 or -1
-    flip: function($el, text, speed, direction, callback) {
-      var that = this;
-      var letters = [ this.detach($el).text(text), this.detach($el, true) ]
+    split: function($el) {
+      var spans;
+      this.wrap($el.html(spans = _.map($el.text(), function(char) { return $('<span>').text(char); })));
+      return spans;
+    },
+
+    // flip $el to text
+    // options: speed is in ms; direction is 1 or -1; bounce: percentage
+    flip: function($el, text, options, callback) {
+      var that = this
+      , letters = [ this.detach($el).text(text), this.detach($el, true) ]
+      , speed = options.speed || 100
+      , direction = options.direction || -1
+      , bounce = options.bounce || 0
       , center = $el.position().top
-      , offset = $el.height() * (direction > 0 ? 1 : -1);
-      letters[1].css({top: center}).animate({top: center - offset}, speed);
-      letters[0].css({top: center + offset}).animate({top: center}, speed, function() {
+      , offset = $el.height() * (direction > 0 ? 1 : -1)
+      , complete = function() {
         that.reattach($el.text(text));
         if (typeof callback=='function') {
           callback.call();
+        }
+      };
+      letters[1].css({top: center}).animate({top: center - offset}, speed);
+      letters[0].css({top: center + offset}).animate({top: center - offset*bounce}, speed, function() {
+        if (bounce==0) {
+          complete();
+        } else {
+          letters[0].animate({top: center}, speed*bounce, function() {
+            complete();
+          });
         }
       });
     },
 
     // speed: 1: normal, 2+: faster
-    blur: function($el, speed) {
+    blur: function($el, speed, chars) {
       var that = this;
+      chars = chars || this.options.chars;
       var letters = [ this.detach($el), this.detach($el), this.detach($el), this.detach($el), this.detach($el, true) ]
       , center = $el.position().top
       , offset = $el.height()*0.1;
@@ -181,19 +240,19 @@
       letters[2].css({top: center, opacity: 0.2/speed});
       letters[1].css({top: center + offset, opacity: 0.2/speed});
       letters[0].css({top: center + 2*offset, opacity: 0.2/speed});
-      _.each(letters, function(letter) { that.flipRandomly(letter); });
+      _.each(letters, function(letter) { that.flipRandomly(letter, chars); });
     },
 
     stopBlur: function($el) {
       this.reattach($el);
     },
 
-    flipRandomly: function($el) {
+    flipRandomly: function($el, chars) {
       var that = this;
       if ($el.parent().length) {
         setTimeout(function() {
-          $el.text(_.random(0,9));
-          that.flipRandomly($el);
+          $el.text(chars[_.random(chars.length-1)]);
+          that.flipRandomly($el, chars);
         }, 10);
       }
     }
